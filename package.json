@@ -1,0 +1,17 @@
+{
+  "name": "omnium-mmo",
+  "version": "1.0.0",
+  "description": "Multiplayer story MMO economy game",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": ["mmo", "game", "multiplayer", "economy"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
+  }
+}
