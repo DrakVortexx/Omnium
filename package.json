@@ -1,19 +1,17 @@
 {
   "name": "login-app",
   "version": "1.0.0",
-  "description": "Authentication app with Neon Auth",
+  "description": "Simple username/password authentication",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
-  "keywords": ["login", "express", "authentication", "neon-auth"],
+  "keywords": ["login", "express", "authentication"],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
-    "node-fetch": "^2.7.0",
-    "dotenv": "^16.3.1",
     "cookie-parser": "^1.4.6"
   }
 }

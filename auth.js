@@ -1,36 +1,18 @@
 const express = require('express');
-const fetch = require('node-fetch');
 
 const router = express.Router();
-const NEON_AUTH_URL = process.env.NEON_AUTH_URL;
 
-// Helper function to make requests to Neon Auth
-async function neonAuthRequest(endpoint, method = 'GET', body = null, headers = {}) {
-  const url = `${NEON_AUTH_URL}${endpoint}`;
-  const options = {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...headers
-    }
-  };
-  
-  if (body) {
-    options.body = JSON.stringify(body);
-  }
-  
-  const response = await fetch(url, options);
-  const data = await response.json();
-  return { response, data };
-}
+// Simple in-memory user store (for demo purposes)
+const users = new Map();
+const sessions = new Map();
 
 // Register new user
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password, confirmPassword } = req.body;
+    const { username, password, confirmPassword } = req.body;
     
     // Validate input
-    if (!username || !email || !password || !confirmPassword) {
+    if (!username || !password || !confirmPassword) {
       return res.status(400).json({ error: 'All fields are required' });
     }
     
@@ -46,18 +28,27 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Passwords do not match' });
     }
     
-    // Sign up with Neon Auth
-    const { response, data } = await neonAuthRequest('/auth/sign-up/email', 'POST', {
-      email,
-      password,
-      name: username
-    });
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || 'Registration failed' });
+    // Check if user already exists
+    if (users.has(username)) {
+      return res.status(400).json({ error: 'Username already exists' });
     }
     
-    res.json({ user: { id: data.user?.id, username: data.user?.name, email: data.user?.email } });
+    // Create user (in a real app, hash the password)
+    const userId = Date.now().toString();
+    users.set(username, { id: userId, username, password });
+    
+    // Create session
+    const sessionId = Date.now().toString();
+    sessions.set(sessionId, { userId, username });
+    
+    // Set session cookie
+    res.cookie('session_id', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+    
+    res.json({ user: { id: userId, username } });
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -67,96 +58,32 @@ router.post('/register', async (req, res) => {
 // Login user
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { username, password } = req.body;
     
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' });
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required' });
     }
     
-    const { response, data } = await neonAuthRequest('/auth/sign-in/email', 'POST', {
-      email,
-      password
+    // Check user credentials
+    const user = users.get(username);
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+    
+    // Create session
+    const sessionId = Date.now().toString();
+    sessions.set(sessionId, { userId: user.id, username });
+    
+    // Set session cookie
+    res.cookie('session_id', sessionId, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
     
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || 'Login failed' });
-    }
-    
-    // Set the session cookie from the response
-    const setCookieHeader = response.headers.get('set-cookie');
-    if (setCookieHeader) {
-      res.setHeader('Set-Cookie', setCookieHeader);
-    }
-    
-    // Handle different response structures
-    const user = data.user || data;
-    res.json({ user: { id: user.id, username: user.name || user.email?.split('@')[0], email: user.email } });
+    res.json({ user: { id: user.id, username } });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Google OAuth - initiate
-router.get('/google', async (req, res) => {
-  try {
-    const callbackURL = `${req.protocol}://${req.get('host')}/auth/google/callback`;
-    console.log('Google OAuth initiated with callback:', callbackURL);
-    console.log('Neon Auth URL:', NEON_AUTH_URL);
-    
-    const { response, data } = await neonAuthRequest('/auth/sign-in/social', 'POST', {
-      provider: 'google',
-      callbackURL
-    });
-    
-    console.log('Neon Auth response status:', response.status);
-    console.log('Neon Auth response data:', data);
-    
-    if (!response.ok) {
-      console.error('Neon Auth error:', data);
-      return res.redirect('/?error=google_auth_failed');
-    }
-    
-    res.redirect(data.url);
-  } catch (error) {
-    console.error('Google OAuth error:', error);
-    res.redirect('/?error=google_auth_failed');
-  }
-});
-
-// Google OAuth - callback
-router.get('/google/callback', async (req, res) => {
-  try {
-    // The callback is handled by Neon Auth directly
-    // We redirect to home and let the frontend check the session
-    res.redirect('/');
-  } catch (error) {
-    console.error('Google callback error:', error);
-    res.redirect('/?error=google_auth_failed');
-  }
-});
-
-// Set username after OAuth
-router.post('/set-username', async (req, res) => {
-  try {
-    const { username } = req.body;
-    
-    if (!username || username.length < 3) {
-      return res.status(400).json({ error: 'Username must be at least 3 characters' });
-    }
-    
-    // Get the session cookie from the request
-    const sessionCookie = req.headers.cookie;
-    
-    if (!sessionCookie) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    // Update user name - this might need to be done through a custom endpoint
-    // For now, we'll simulate success
-    res.json({ message: 'Username set successfully', username });
-  } catch (error) {
-    console.error('Username update error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -164,14 +91,12 @@ router.post('/set-username', async (req, res) => {
 // Logout
 router.post('/logout', async (req, res) => {
   try {
-    const { response, data } = await neonAuthRequest('/auth/sign-out', 'POST');
-    
-    if (!response.ok) {
-      return res.status(response.status).json({ error: data.error?.message || 'Logout failed' });
+    const sessionId = req.cookies.session_id;
+    if (sessionId) {
+      sessions.delete(sessionId);
     }
     
-    // Clear the session cookie
-    res.clearCookie('__Secure-neonauth.session_token');
+    res.clearCookie('session_id');
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
@@ -182,37 +107,29 @@ router.post('/logout', async (req, res) => {
 // Get current user
 router.get('/me', async (req, res) => {
   try {
-    // Forward the session cookie from the request
-    const sessionCookie = req.headers.cookie;
+    const sessionId = req.cookies.session_id;
     
-    if (!sessionCookie) {
+    if (!sessionId) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    const { response, data } = await neonAuthRequest('/auth/get-session', 'GET', null, {
-      'Cookie': sessionCookie
+    const session = sessions.get(sessionId);
+    if (!session) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const user = users.get(session.username);
+    if (!user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    res.json({ 
+      user: { 
+        id: user.id, 
+        username: user.username,
+        hasUsername: true
+      } 
     });
-    
-    if (!response.ok) {
-      return res.status(401).json({ error: 'Not authenticated' });
-    }
-    
-    // Handle different response structures
-    const user = data.user || data;
-    const session = data.session || data;
-    
-    if (user) {
-      res.json({ 
-        user: { 
-          id: user.id, 
-          username: user.name || user.email?.split('@')[0], 
-          email: user.email,
-          hasUsername: !!user.name
-        } 
-      });
-    } else {
-      res.status(401).json({ error: 'Not authenticated' });
-    }
   } catch (error) {
     console.error('Session check error:', error);
     res.status(401).json({ error: 'Not authenticated' });
