@@ -226,17 +226,112 @@
         .username-setup.active {
             display: block;
         }
+
+        /* Dashboard Screen */
+        .dashboard-screen {
+            display: none;
+        }
+
+        .dashboard-screen.active {
+            display: block;
+        }
+
+        .dashboard-screen h2 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #4ecdc4;
+        }
+
+        .dashboard-screen p {
+            margin-bottom: 2rem;
+            color: #ccc;
+        }
+
+        .play-btn {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            border: none;
+            cursor: pointer;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: white;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+            box-shadow: 0 8px 32px rgba(233, 69, 96, 0.4);
+        }
+
+        .play-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 12px 40px rgba(233, 69, 96, 0.6);
+        }
+
+        .play-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Game World Screen */
+        .game-world {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1a1a2e;
+        }
+
+        .game-world.active {
+            display: block;
+        }
+
+        .game-field {
+            width: 100%;
+            height: 100%;
+            background-image: url('/assets/models/stationground-1.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        .game-ui {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 10px;
+            color: white;
+        }
+
+        .back-btn {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        .back-btn:hover {
+            background: #ff6b6b;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Logged In Screen -->
+        <!-- Logged In Screen (Dashboard) -->
         <div id="logged-in-screen" class="logged-in-screen">
             <h1>✓ Logged In</h1>
             <h2>Registered & Authenticated</h2>
             <p>Welcome back, <span id="logged-username">User</span>!</p>
-            <p id="logged-email">user@example.com</p>
-            <button class="auth-btn" onclick="logout()">Logout</button>
+            <button class="play-btn" onclick="enterGameWorld()">▶ PLAY</button>
+            <button class="auth-btn" onclick="logout()" style="margin-top: 2rem;">Logout</button>
         </div>
 
         <!-- Username Setup Screen (after Google OAuth) -->
@@ -298,6 +393,16 @@
 
             <div id="message" class="message"></div>
         </div>
+
+        <!-- Game World Screen -->
+        <div id="game-world" class="game-world">
+            <div class="game-field"></div>
+            <div class="game-ui">
+                <h3>🎮 Game World</h3>
+                <p>Player: <span id="game-username">User</span></p>
+                <button class="back-btn" onclick="exitGameWorld()">← Back to Dashboard</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -331,7 +436,7 @@
             document.getElementById('logged-in-screen').classList.add('active');
             document.getElementById('logged-in-screen').style.display = 'block';
             document.getElementById('logged-username').textContent = user.username || 'User';
-            document.getElementById('logged-email').textContent = user.email;
+            document.getElementById('game-username').textContent = user.username || 'User';
         }
 
         function showUsernameSetup() {
@@ -498,6 +603,20 @@
             } catch (error) {
                 showMessage('Logout failed', 'error');
             }
+        }
+
+        function enterGameWorld() {
+            document.getElementById('logged-in-screen').classList.remove('active');
+            document.getElementById('logged-in-screen').style.display = 'none';
+            document.getElementById('game-world').classList.add('active');
+            document.getElementById('game-world').style.display = 'block';
+        }
+
+        function exitGameWorld() {
+            document.getElementById('game-world').classList.remove('active');
+            document.getElementById('game-world').style.display = 'none';
+            document.getElementById('logged-in-screen').classList.add('active');
+            document.getElementById('logged-in-screen').style.display = 'block';
         }
 
         // Check for URL parameters on page load
