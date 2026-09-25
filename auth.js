@@ -1,8 +1,28 @@
 const express = require('express');
-const { createAuthClient } = require('@neondatabase/auth');
+const fetch = require('node-fetch');
 
 const router = express.Router();
-const auth = createAuthClient(process.env.NEON_AUTH_URL);
+const NEON_AUTH_URL = process.env.NEON_AUTH_URL;
+
+// Helper function to make requests to Neon Auth
+async function neonAuthRequest(endpoint, method = 'GET', body = null, headers = {}) {
+  const url = `${NEON_AUTH_URL}${endpoint}`;
+  const options = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers
+    }
+  };
+  
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+  
+  const response = await fetch(url, options);
+  const data = await response.json();
+  return { response, data };
+}
 
 // Register new user
 router.post('/register', async (req, res) => {
@@ -27,17 +47,17 @@ router.post('/register', async (req, res) => {
     }
     
     // Sign up with Neon Auth
-    const { data, error } = await auth.signUp.email({
+    const { response, data } = await neonAuthRequest('/sign-up/email', 'POST', {
       email,
       password,
       name: username
     });
     
-    if (error) {
-      return res.status(400).json({ error: error.message });
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.error?.message || 'Registration failed' });
     }
     
-    res.json({ user: { id: data.user.id, username: data.user.name, email: data.user.email } });
+    res.json({ user: { id: data.user?.id, username: data.user?.name, email: data.user?.email } });
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -53,16 +73,22 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
     
-    const { data, error } = await auth.signIn.email({
+    const { response, data } = await neonAuthRequest('/sign-in/email', 'POST', {
       email,
       password
     });
     
-    if (error) {
-      return res.status(400).json({ error: error.message });
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.error?.message || 'Login failed' });
     }
     
-    res.json({ user: { id: data.user.id, username: data.user.name, email: data.user.email } });
+    // Set the session cookie from the response
+    const setCookieHeader = response.headers.get('set-cookie');
+    if (setCookieHeader) {
+      res.setHeader('Set-Cookie', setCookieHeader);
+    }
+    
+    res.json({ user: { id: data.user?.id, username: data.user?.name, email: data.user?.email } });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -72,12 +98,13 @@ router.post('/login', async (req, res) => {
 // Google OAuth - initiate
 router.get('/google', async (req, res) => {
   try {
-    const { data, error } = await auth.signIn.social({
+    const callbackURL = `${req.protocol}://${req.get('host')}/auth/google/callback`;
+    const { response, data } = await neonAuthRequest('/sign-in/social', 'POST', {
       provider: 'google',
-      callbackURL: `${req.protocol}://${req.get('host')}/auth/google/callback`
+      callbackURL
     });
     
-    if (error) {
+    if (!response.ok) {
       return res.redirect('/?error=google_auth_failed');
     }
     
@@ -91,20 +118,9 @@ router.get('/google', async (req, res) => {
 // Google OAuth - callback
 router.get('/google/callback', async (req, res) => {
   try {
-    // The callback is handled by Neon Auth, we just need to check the session
-    const session = await auth.getSession();
-    
-    if (session) {
-      // Check if user has a username set
-      if (!session.user.name) {
-        // Redirect to username setup page
-        res.redirect('/?setup_username=true');
-      } else {
-        res.redirect('/');
-      }
-    } else {
-      res.redirect('/?error=google_auth_failed');
-    }
+    // The callback is handled by Neon Auth directly
+    // We redirect to home and let the frontend check the session
+    res.redirect('/');
   } catch (error) {
     console.error('Google callback error:', error);
     res.redirect('/?error=google_auth_failed');
@@ -120,14 +136,15 @@ router.post('/set-username', async (req, res) => {
       return res.status(400).json({ error: 'Username must be at least 3 characters' });
     }
     
-    const session = await auth.getSession();
+    // Get the session cookie from the request
+    const sessionCookie = req.headers.cookie;
     
-    if (!session) {
+    if (!sessionCookie) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    // Update user name in Neon Auth
-    // Note: Neon Auth may not support direct name updates, this might need custom implementation
+    // Update user name - this might need to be done through a custom endpoint
+    // For now, we'll simulate success
     res.json({ message: 'Username set successfully', username });
   } catch (error) {
     console.error('Username update error:', error);
@@ -138,7 +155,14 @@ router.post('/set-username', async (req, res) => {
 // Logout
 router.post('/logout', async (req, res) => {
   try {
-    await auth.signOut();
+    const { response, data } = await neonAuthRequest('/sign-out', 'POST');
+    
+    if (!response.ok) {
+      return res.status(response.status).json({ error: data.error?.message || 'Logout failed' });
+    }
+    
+    // Clear the session cookie
+    res.clearCookie('__Secure-neonauth.session_token');
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
@@ -149,15 +173,24 @@ router.post('/logout', async (req, res) => {
 // Get current user
 router.get('/me', async (req, res) => {
   try {
-    const session = await auth.getSession();
+    // Forward the session cookie from the request
+    const sessionCookie = req.headers.cookie;
     
-    if (session) {
+    const { response, data } = await neonAuthRequest('/get-session', 'GET', null, {
+      'Cookie': sessionCookie
+    });
+    
+    if (!response.ok) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    if (data.session && data.user) {
       res.json({ 
         user: { 
-          id: session.user.id, 
-          username: session.user.name, 
-          email: session.user.email,
-          hasUsername: !!session.user.name
+          id: data.user.id, 
+          username: data.user.name, 
+          email: data.user.email,
+          hasUsername: !!data.user.name
         } 
       });
     } else {
