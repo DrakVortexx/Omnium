@@ -47,7 +47,7 @@ router.post('/register', async (req, res) => {
     }
     
     // Sign up with Neon Auth
-    const { response, data } = await neonAuthRequest('/sign-up/email', 'POST', {
+    const { response, data } = await neonAuthRequest('/auth/sign-up/email', 'POST', {
       email,
       password,
       name: username
@@ -73,7 +73,7 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
     
-    const { response, data } = await neonAuthRequest('/sign-in/email', 'POST', {
+    const { response, data } = await neonAuthRequest('/auth/sign-in/email', 'POST', {
       email,
       password
     });
@@ -101,12 +101,19 @@ router.post('/login', async (req, res) => {
 router.get('/google', async (req, res) => {
   try {
     const callbackURL = `${req.protocol}://${req.get('host')}/auth/google/callback`;
-    const { response, data } = await neonAuthRequest('/sign-in/social', 'POST', {
+    console.log('Google OAuth initiated with callback:', callbackURL);
+    console.log('Neon Auth URL:', NEON_AUTH_URL);
+    
+    const { response, data } = await neonAuthRequest('/auth/sign-in/social', 'POST', {
       provider: 'google',
       callbackURL
     });
     
+    console.log('Neon Auth response status:', response.status);
+    console.log('Neon Auth response data:', data);
+    
     if (!response.ok) {
+      console.error('Neon Auth error:', data);
       return res.redirect('/?error=google_auth_failed');
     }
     
@@ -157,7 +164,7 @@ router.post('/set-username', async (req, res) => {
 // Logout
 router.post('/logout', async (req, res) => {
   try {
-    const { response, data } = await neonAuthRequest('/sign-out', 'POST');
+    const { response, data } = await neonAuthRequest('/auth/sign-out', 'POST');
     
     if (!response.ok) {
       return res.status(response.status).json({ error: data.error?.message || 'Logout failed' });
@@ -182,7 +189,7 @@ router.get('/me', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    const { response, data } = await neonAuthRequest('/get-session', 'GET', null, {
+    const { response, data } = await neonAuthRequest('/auth/get-session', 'GET', null, {
       'Cookie': sessionCookie
     });
     
