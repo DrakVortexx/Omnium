@@ -63,7 +63,7 @@ router.post('/register', async (req, res) => {
       maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
     
-    res.json({ user: { id: user.id, username: user.username } });
+    res.redirect('/dashboard');
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -113,7 +113,7 @@ router.post('/login', async (req, res) => {
       maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
     });
     
-    res.json({ user: { id: user.id, username: user.username } });
+    res.redirect('/dashboard');
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
