@@ -88,7 +88,9 @@ router.post('/login', async (req, res) => {
       res.setHeader('Set-Cookie', setCookieHeader);
     }
     
-    res.json({ user: { id: data.user?.id, username: data.user?.name, email: data.user?.email } });
+    // Handle different response structures
+    const user = data.user || data;
+    res.json({ user: { id: user.id, username: user.name || user.email?.split('@')[0], email: user.email } });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -176,6 +178,10 @@ router.get('/me', async (req, res) => {
     // Forward the session cookie from the request
     const sessionCookie = req.headers.cookie;
     
+    if (!sessionCookie) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
     const { response, data } = await neonAuthRequest('/get-session', 'GET', null, {
       'Cookie': sessionCookie
     });
@@ -184,13 +190,17 @@ router.get('/me', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
-    if (data.session && data.user) {
+    // Handle different response structures
+    const user = data.user || data;
+    const session = data.session || data;
+    
+    if (user) {
       res.json({ 
         user: { 
-          id: data.user.id, 
-          username: data.user.name, 
-          email: data.user.email,
-          hasUsername: !!data.user.name
+          id: user.id, 
+          username: user.name || user.email?.split('@')[0], 
+          email: user.email,
+          hasUsername: !!user.name
         } 
       });
     } else {
@@ -198,7 +208,7 @@ router.get('/me', async (req, res) => {
     }
   } catch (error) {
     console.error('Session check error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(401).json({ error: 'Not authenticated' });
   }
 });
 
