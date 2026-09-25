@@ -298,7 +298,7 @@
 
         .game-ui {
             position: absolute;
-            top: 20px;
+            bottom: 20px;
             right: 20px;
             background: rgba(0, 0, 0, 0.7);
             padding: 15px;
@@ -310,7 +310,7 @@
         .game-controls {
             position: absolute;
             bottom: 20px;
-            left: 20px;
+            right: 20px;
             background: rgba(0, 0, 0, 0.7);
             padding: 15px;
             border-radius: 10px;
@@ -332,6 +332,11 @@
             background: #ff6b6b;
         }
 
+        .back-btn {
+            margin-top: 10px;
+            width: 100%;
+        }
+
         .crosshair {
             position: absolute;
             top: 50%;
@@ -343,6 +348,29 @@
             border-radius: 50%;
             z-index: 100;
             pointer-events: none;
+        }
+
+        .crosshair::before,
+        .crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .crosshair::before {
+            width: 2px;
+            height: 8px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .crosshair::after {
+            width: 8px;
+            height: 2px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
         }
     </style>
 </head>
@@ -421,17 +449,15 @@
         <div id="game-world" class="game-world">
             <canvas id="game-canvas"></canvas>
             <div class="crosshair"></div>
-            <div class="game-ui">
-                <h3>🎮 Game World</h3>
-                <p>Player: <span id="game-username">User</span></p>
-                <button class="back-btn" onclick="exitGameWorld()">← Back to Dashboard</button>
-            </div>
             <div class="game-controls">
                 <p><strong>Controls:</strong></p>
                 <p>WASD - Move</p>
                 <p>Mouse - Look around</p>
+                <p>Space - Jump</p>
+                <p>Shift - Sprint</p>
                 <p>Click to capture mouse</p>
                 <p>ESC - Release mouse</p>
+                <button class="back-btn" onclick="exitGameWorld()">← Back to Dashboard</button>
             </div>
         </div>
     </div>
@@ -467,7 +493,6 @@
             document.getElementById('logged-in-screen').classList.add('active');
             document.getElementById('logged-in-screen').style.display = 'block';
             document.getElementById('logged-username').textContent = user.username || 'User';
-            document.getElementById('game-username').textContent = user.username || 'User';
         }
 
         function showUsernameSetup() {
@@ -672,7 +697,7 @@
         const jumpGravity = 0.02;
         const fallGravity = 0.3;
         let currentGravity = jumpGravity;
-        const groundLevel = 1.6;
+        const groundLevel = 0.6; // Adjusted for ground position
         let isFalling = false;
         let raycaster, downVector;
 
@@ -707,22 +732,27 @@
             const groundGeometry = new THREE.BoxGeometry(groundSize, groundDepth, groundSize, groundSegments, 1, groundSegments);
             const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
 
+            // Load and apply texture
             textureLoader.load('/assets/models/stationground-1.png', (texture) => {
                 texture.wrapS = THREE.RepeatWrapping;
                 texture.wrapT = THREE.RepeatWrapping;
-                texture.repeat.set(10, 10);
+                texture.repeat.set(20, 20); // More repetition for larger field
                 groundMaterial.map = texture;
                 groundMaterial.needsUpdate = true;
+            }, undefined, (error) => {
+                console.error('Error loading texture:', error);
+                // Keep white floor if texture fails
             });
 
             ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.position.y = -1; // Position ground so top is at y=0
             scene.add(ground);
 
             // Create player object (invisible, camera attached)
             const playerGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
             const playerMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, visible: false });
             player = new THREE.Mesh(playerGeometry, playerMaterial);
-            player.position.y = 1.6;
+            player.position.y = 0.6; // Eye level above ground (ground top at y=0)
             scene.add(player);
 
             player.add(camera);
