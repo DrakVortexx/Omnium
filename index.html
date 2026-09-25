@@ -659,86 +659,90 @@
             }
         }
 
-        // Three.js Game Variables
-        let scene, camera, renderer, ground;
-        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-        let velocity = new THREE.Vector3();
-        let direction = new THREE.Vector3();
+        // Three.js Game Variables (using working template)
+        let scene, camera, renderer, ground, player;
         let gameRunning = false;
+        let isPointerLocked = false;
         let textureLoader = new THREE.TextureLoader();
+        let keys = {};
+        let velocity = 0.1;
+        const sprintVelocity = 0.2;
+        let isJumping = false;
+        let jumpVelocity = 0.25;
+        const jumpGravity = 0.02;
+        const fallGravity = 0.3;
+        let currentGravity = jumpGravity;
+        const groundLevel = 1.6;
+        let isFalling = false;
+        let raycaster, downVector;
 
         function initGame() {
             // Scene setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); // Sky blue
-            scene.fog = new THREE.Fog(0x87CEEB, 10, 100);
 
-            // Camera setup (first person)
+            // Camera setup
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 2, 5); // Eye level
 
             // Renderer setup
             const canvas = document.getElementById('game-canvas');
             renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('game-world').appendChild(renderer.domElement);
 
             // Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            const ambientLight = new THREE.AmbientLight(0xffffff, 2);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(50, 50, 50);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(5, 5, 5);
             scene.add(directionalLight);
 
-            // Load ground texture
+            // Create ground with your texture
+            const groundSize = 100;
+            const groundDepth = 2;
+            const groundSegments = 1;
+
+            const groundGeometry = new THREE.BoxGeometry(groundSize, groundDepth, groundSize, groundSegments, 1, groundSegments);
+            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
+
             textureLoader.load('/assets/models/stationground-1.png', (texture) => {
                 texture.wrapS = THREE.RepeatWrapping;
                 texture.wrapT = THREE.RepeatWrapping;
                 texture.repeat.set(10, 10);
-                
-                // Create ground plane
-                const groundGeometry = new THREE.PlaneGeometry(100, 100);
-                const groundMaterial = new THREE.MeshStandardMaterial({ 
-                    map: texture,
-                    roughness: 0.8,
-                    metalness: 0.2
-                });
-                ground = new THREE.Mesh(groundGeometry, groundMaterial);
-                ground.rotation.x = -Math.PI / 2;
-                scene.add(ground);
+                groundMaterial.map = texture;
+                groundMaterial.needsUpdate = true;
             });
 
-            // Add some simple objects for reference
-            addReferenceObjects();
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            scene.add(ground);
+
+            // Create player object (invisible, camera attached)
+            const playerGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
+            const playerMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, visible: false });
+            player = new THREE.Mesh(playerGeometry, playerMaterial);
+            player.position.y = 1.6;
+            scene.add(player);
+
+            player.add(camera);
+            camera.position.set(0, 1.6, 0);
+
+            // Setup raycaster for jumping/falling
+            raycaster = new THREE.Raycaster();
+            downVector = new THREE.Vector3(0, -1, 0);
 
             // Event listeners
             window.addEventListener('resize', onWindowResize);
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
-            canvas.addEventListener('click', onCanvasClick);
-            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('click', onCanvasClick);
             document.addEventListener('pointerlockchange', onPointerLockChange);
+            document.addEventListener('mousemove', onMouseMove);
 
             // Start game loop
             gameRunning = true;
             animate();
-        }
-
-        function addReferenceObjects() {
-            // Add some cubes as reference points
-            const cubeGeometry = new THREE.BoxGeometry(1, 1, 1);
-            const cubeMaterial = new THREE.MeshStandardMaterial({ color: 0xe94560 });
-            
-            for (let i = 0; i < 10; i++) {
-                const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
-                cube.position.set(
-                    (Math.random() - 0.5) * 40,
-                    0.5,
-                    (Math.random() - 0.5) * 40
-                );
-                scene.add(cube);
-            }
         }
 
         function onWindowResize() {
@@ -748,63 +752,88 @@
         }
 
         function onKeyDown(event) {
-            switch (event.code) {
-                case 'ArrowUp':
-                case 'KeyW':
-                    moveForward = true;
-                    break;
-                case 'ArrowLeft':
-                case 'KeyA':
-                    moveLeft = true;
-                    break;
-                case 'ArrowDown':
-                case 'KeyS':
-                    moveBackward = true;
-                    break;
-                case 'ArrowRight':
-                case 'KeyD':
-                    moveRight = true;
-                    break;
+            keys[event.code] = true;
+            
+            if (event.code === 'Space' && !isJumping && !isFalling) {
+                isJumping = true;
+                currentGravity = jumpGravity;
             }
         }
 
         function onKeyUp(event) {
-            switch (event.code) {
-                case 'ArrowUp':
-                case 'KeyW':
-                    moveForward = false;
-                    break;
-                case 'ArrowLeft':
-                case 'KeyA':
-                    moveLeft = false;
-                    break;
-                case 'ArrowDown':
-                case 'KeyS':
-                    moveBackward = false;
-                    break;
-                case 'ArrowRight':
-                case 'KeyD':
-                    moveRight = false;
-                    break;
-            }
+            keys[event.code] = false;
         }
 
         function onCanvasClick() {
-            if (!gameRunning) return;
-            document.body.requestPointerLock();
+            if (!isPointerLocked && gameRunning) {
+                document.body.requestPointerLock();
+            }
+        }
+
+        function onPointerLockChange() {
+            isPointerLocked = document.pointerLockElement === document.body;
         }
 
         function onMouseMove(event) {
-            if (document.pointerLockElement === document.body && gameRunning) {
-                camera.rotation.y -= event.movementX * 0.002;
+            if (isPointerLocked && gameRunning) {
+                player.rotation.y -= event.movementX * 0.002;
                 camera.rotation.x -= event.movementY * 0.002;
                 camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
             }
         }
 
-        function onPointerLockChange() {
-            if (document.pointerLockElement !== document.body) {
-                // Pointer lock released
+        function updatePlayerPosition() {
+            const direction = new THREE.Vector3();
+
+            if (keys['KeyW']) direction.z = -1;
+            if (keys['KeyS']) direction.z = 1;
+            if (keys['KeyA']) direction.x = -1;
+            if (keys['KeyD']) direction.x = 1;
+
+            direction.normalize();
+
+            const currentVelocity = keys['ShiftLeft'] ? sprintVelocity : velocity;
+            const moveVector = new THREE.Vector3();
+            moveVector.copy(direction);
+            moveVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
+
+            player.position.x += moveVector.x * currentVelocity;
+            player.position.z += moveVector.z * currentVelocity;
+        }
+
+        function updatePlayerJumpAndFall() {
+            if (isJumping) {
+                player.position.y += jumpVelocity;
+                jumpVelocity -= currentGravity;
+
+                if (player.position.y < groundLevel) {
+                    player.position.y = groundLevel;
+                    isJumping = false;
+                    jumpVelocity = 0.25;
+                    isFalling = false;
+                    currentGravity = jumpGravity;
+                }
+            } else {
+                raycaster.set(player.position, downVector);
+                const intersects = raycaster.intersectObject(ground);
+
+                if (intersects.length > 0) {
+                    if (isFalling) {
+                        isFalling = false;
+                        player.position.y = groundLevel;
+                        currentGravity = jumpGravity;
+                    }
+                } else {
+                    isFalling = true;
+                    currentGravity = fallGravity;
+                }
+
+                if (isFalling) {
+                    player.position.y -= currentGravity;
+                    if (player.position.y < -50) {
+                        player.position.y = -50;
+                    }
+                }
             }
         }
 
@@ -812,33 +841,8 @@
             if (!gameRunning) return;
 
             requestAnimationFrame(animate);
-
-            // Movement
-            velocity.x -= velocity.x * 10.0 * 0.016; // friction
-            velocity.z -= velocity.z * 10.0 * 0.016;
-
-            direction.z = Number(moveForward) - Number(moveBackward);
-            direction.x = Number(moveRight) - Number(moveLeft);
-            direction.normalize();
-
-            if (moveForward || moveBackward) velocity.z -= direction.z * 100.0 * 0.016;
-            if (moveLeft || moveRight) velocity.x -= direction.x * 100.0 * 0.016;
-
-            // Apply movement relative to camera direction
-            const forward = new THREE.Vector3();
-            camera.getWorldDirection(forward);
-            forward.y = 0;
-            forward.normalize();
-
-            const right = new THREE.Vector3();
-            right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
-
-            camera.position.addScaledVector(forward, -velocity.z * 0.016);
-            camera.position.addScaledVector(right, -velocity.x * 0.016);
-
-            // Keep camera at eye level
-            camera.position.y = 2;
-
+            updatePlayerPosition();
+            updatePlayerJumpAndFall();
             renderer.render(scene, camera);
         }
 
