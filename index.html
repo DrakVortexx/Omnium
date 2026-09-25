@@ -357,22 +357,29 @@
 
         function showLoggedInScreen(user) {
             document.getElementById('auth-forms').classList.remove('active');
+            document.getElementById('auth-forms').style.display = 'none';
             document.getElementById('username-setup').classList.remove('active');
+            document.getElementById('username-setup').style.display = 'none';
             document.getElementById('logged-in-screen').classList.add('active');
+            document.getElementById('logged-in-screen').style.display = 'block';
             document.getElementById('logged-username').textContent = user.username || 'User';
             document.getElementById('logged-email').textContent = user.email;
         }
 
         function showUsernameSetup() {
             document.getElementById('auth-forms').classList.remove('active');
+            document.getElementById('auth-forms').style.display = 'none';
             document.getElementById('logged-in-screen').classList.remove('active');
+            document.getElementById('logged-in-screen').style.display = 'none';
             document.getElementById('username-setup').classList.add('active');
+            document.getElementById('username-setup').style.display = 'block';
         }
 
         function showAuthForms() {
             document.getElementById('logged-in-screen').classList.remove('active');
             document.getElementById('username-setup').classList.remove('active');
             document.getElementById('auth-forms').classList.add('active');
+            document.getElementById('auth-forms').style.display = 'block';
         }
 
         function switchTab(tab) {
@@ -391,6 +398,9 @@
         }
 
         function showMessage(text, type) {
+            // Make sure auth forms are visible before showing message
+            showAuthForms();
+            
             const messageDiv = document.getElementById('message');
             messageDiv.textContent = text;
             messageDiv.className = `message ${type}`;
@@ -527,8 +537,66 @@
             }
         }
 
+        // Check for URL parameters on page load
+        function checkUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const error = urlParams.get('error');
+            const setupUsername = urlParams.get('setup_username');
+            
+            let shouldShowAuthForms = false;
+            
+            if (error === 'google_auth_failed') {
+                showMessage('Google authentication failed. Please try again.', 'error');
+                shouldShowAuthForms = true;
+            }
+            
+            if (setupUsername === 'true') {
+                showUsernameSetup();
+                shouldShowAuthForms = false;
+            }
+            
+            // Clear all URL parameters
+            if (urlParams.toString()) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+            
+            return shouldShowAuthForms;
+        }
+
         // Check auth status on page load
-        checkAuth();
+        async function checkAuth() {
+            try {
+                const response = await fetch('/auth/me');
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Check if user needs to set username
+                    if (!data.user.hasUsername) {
+                        showUsernameSetup();
+                    } else {
+                        showLoggedInScreen(data.user);
+                    }
+                } else {
+                    showAuthForms();
+                }
+            } catch (error) {
+                console.error('Auth check failed:', error);
+                showAuthForms();
+            }
+        }
+
+        // Initialize page - check URL params first, then auth
+        async function initPage() {
+            const showAuthDueToError = checkUrlParams();
+            if (!showAuthDueToError) {
+                await checkAuth();
+            } else {
+                showAuthForms();
+            }
+        }
+
+        // Initialize the page
+        initPage();
     </script>
 </body>
 </html>
