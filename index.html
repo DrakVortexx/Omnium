@@ -382,7 +382,6 @@
             <h2>Registered & Authenticated</h2>
             <p>Welcome back, <span id="logged-username">User</span>!</p>
             <button class="play-btn" onclick="enterGameWorld()">▶ PLAY</button>
-            <button class="auth-btn" onclick="logout()" style="margin-top: 2rem;">Logout</button>
         </div>
 
         <!-- Username Setup Screen (after Google OAuth) -->
@@ -452,10 +451,10 @@
             <div class="game-controls">
                 <p><strong>Controls:</strong></p>
                 <p>WASD - Move</p>
-                <p>Mouse - Look around</p>
-                <p>Space - Jump</p>
-                <p>Shift - Sprint</p>
-                <p>Click to capture mouse</p>
+                <p>SPACE - Jump</p>
+                <p>MOUSE - Look around</p>
+                <p>SHIFT - Sprint</p>
+                <p>CLICK - Capture mouse</p>
                 <p>ESC - Release mouse</p>
                 <button class="back-btn" onclick="exitGameWorld()">← Back to Dashboard</button>
             </div>
@@ -684,12 +683,21 @@
             }
         }
 
-        // Three.js Game Variables (using working template)
+        // Minecraft-style Game Variables
         let scene, camera, renderer, ground, player;
         let gameRunning = false;
         let isPointerLocked = false;
         let textureLoader = new THREE.TextureLoader();
         let keys = {};
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        let canJump = true;
+        let prevTime = performance.now();
+        let blocks = [];
+        let raycaster = new THREE.Raycaster();
+        let mouse = new THREE.Vector2();
         let velocity = 0.1;
         const sprintVelocity = 0.2;
         let isJumping = false;
@@ -697,62 +705,46 @@
         const jumpGravity = 0.02;
         const fallGravity = 0.3;
         let currentGravity = jumpGravity;
-        const groundLevel = 0.6; // Adjusted for ground position
+        const groundLevel = 1.6;
         let isFalling = false;
-        let raycaster, downVector;
+        let downVector;
 
         function initGame() {
             // Scene setup
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x87CEEB); // Sky blue
+            scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
 
             // Camera setup
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.y = 10;
 
             // Renderer setup
             const canvas = document.getElementById('game-canvas');
             renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
             document.getElementById('game-world').appendChild(renderer.domElement);
 
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0xffffff, 2);
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0x606060);
             scene.add(ambientLight);
 
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
-            directionalLight.position.set(5, 5, 5);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 0.5).normalize();
+            directionalLight.castShadow = true;
             scene.add(directionalLight);
 
-            // Create ground with your texture
-            const groundSize = 100;
-            const groundDepth = 2;
-            const groundSegments = 1;
+            // Create textured ground (field only, no trees)
+            createField();
 
-            const groundGeometry = new THREE.BoxGeometry(groundSize, groundDepth, groundSize, groundSegments, 1, groundSegments);
-            const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff });
-
-            // Load and apply texture
-            textureLoader.load('/assets/models/stationground-1.png', (texture) => {
-                texture.wrapS = THREE.RepeatWrapping;
-                texture.wrapT = THREE.RepeatWrapping;
-                texture.repeat.set(20, 20); // More repetition for larger field
-                groundMaterial.map = texture;
-                groundMaterial.needsUpdate = true;
-            }, undefined, (error) => {
-                console.error('Error loading texture:', error);
-                // Keep white floor if texture fails
-            });
-
-            ground = new THREE.Mesh(groundGeometry, groundMaterial);
-            ground.position.y = -1; // Position ground so top is at y=0
-            scene.add(ground);
-
-            // Create player object (invisible, camera attached)
+            // Create player object
             const playerGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
             const playerMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff, visible: false });
             player = new THREE.Mesh(playerGeometry, playerMaterial);
-            player.position.y = 0.6; // Eye level above ground (ground top at y=0)
+            player.position.y = 1.6;
+            player.velocity = new THREE.Vector3();
             scene.add(player);
 
             player.add(camera);
@@ -766,13 +758,61 @@
             window.addEventListener('resize', onWindowResize);
             document.addEventListener('keydown', onKeyDown);
             document.addEventListener('keyup', onKeyUp);
+            document.addEventListener('mousedown', onMouseDown);
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('wheel', onMouseWheel);
             document.addEventListener('click', onCanvasClick);
             document.addEventListener('pointerlockchange', onPointerLockChange);
-            document.addEventListener('mousemove', onMouseMove);
 
             // Start game loop
             gameRunning = true;
             animate();
+        }
+
+        function createField() {
+            const fieldSize = 100;
+            const fieldGeometry = new THREE.PlaneGeometry(fieldSize, fieldSize, 32, 32);
+            
+            // Modify vertices to create slight terrain variations
+            const vertices = fieldGeometry.attributes.position.array;
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const z = vertices[i+2];
+                
+                // Create gentle hills using sine waves
+                const height = Math.sin(x * 0.05) * Math.cos(z * 0.05) * 2;
+                vertices[i+1] = height;
+            }
+            
+            fieldGeometry.computeVertexNormals();
+            
+            const fieldMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xffffff,
+                roughness: 0.9
+            });
+
+            // Load and apply your field texture
+            textureLoader.load('/assets/models/stationground-1.png', (texture) => {
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.RepeatWrapping;
+                texture.repeat.set(10, 10);
+                fieldMaterial.map = texture;
+                fieldMaterial.needsUpdate = true;
+            }, undefined, (error) => {
+                console.error('Error loading texture:', error);
+            });
+
+            ground = new THREE.Mesh(fieldGeometry, fieldMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            scene.add(ground);
+            blocks.push(ground);
+
+            // Add grid helper for depth perception
+            const gridHelper = new THREE.GridHelper(fieldSize, 20, 0x000000, 0x000000);
+            gridHelper.material.opacity = 0.1;
+            gridHelper.material.transparent = true;
+            scene.add(gridHelper);
         }
 
         function onWindowResize() {
@@ -784,14 +824,85 @@
         function onKeyDown(event) {
             keys[event.code] = true;
             
-            if (event.code === 'Space' && !isJumping && !isFalling) {
-                isJumping = true;
-                currentGravity = jumpGravity;
+            switch (event.keyCode) {
+                case 38: // up
+                case 87: // w
+                    moveForward = true;
+                    break;
+                case 40: // down
+                case 83: // s
+                    moveBackward = true;
+                    break;
+                case 37: // left
+                case 65: // a
+                    moveLeft = true;
+                    break;
+                case 39: // right
+                case 68: // d
+                    moveRight = true;
+                    break;
+                case 32: // space
+                    if (canJump && !isJumping && !isFalling) {
+                        player.velocity.y = 10;
+                        canJump = false;
+                        isJumping = true;
+                    }
+                    break;
             }
         }
 
         function onKeyUp(event) {
             keys[event.code] = false;
+            
+            switch (event.keyCode) {
+                case 38: // up
+                case 87: // w
+                    moveForward = false;
+                    break;
+                case 40: // down
+                case 83: // s
+                    moveBackward = false;
+                    break;
+                case 37: // left
+                case 65: // a
+                    moveLeft = false;
+                    break;
+                case 39: // right
+                case 68: // d
+                    moveRight = false;
+                    break;
+            }
+        }
+
+        function onMouseMove(event) {
+            if (isPointerLocked && gameRunning) {
+                const movementX = event.movementX || 0;
+                const movementY = event.movementY || 0;
+                
+                // Limit horizontal rotation
+                player.rotation.y -= movementX * 0.002;
+                
+                // Limit vertical rotation
+                camera.rotation.x -= movementY * 0.002;
+                camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+            }
+        }
+
+        function onMouseDown(event) {
+            if (isPointerLocked) {
+                // Raycasting for block interaction (can be extended later)
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObjects(blocks);
+                
+                if (intersects.length > 0) {
+                    const intersect = intersects[0];
+                    console.log('Clicked on:', intersect.object);
+                }
+            }
+        }
+
+        function onMouseWheel(event) {
+            // Can be used for block selection later
         }
 
         function onCanvasClick() {
@@ -804,29 +915,21 @@
             isPointerLocked = document.pointerLockElement === document.body;
         }
 
-        function onMouseMove(event) {
-            if (isPointerLocked && gameRunning) {
-                player.rotation.y -= event.movementX * 0.002;
-                camera.rotation.x -= event.movementY * 0.002;
-                camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
-            }
-        }
-
         function updatePlayerPosition() {
             const direction = new THREE.Vector3();
-
-            if (keys['KeyW']) direction.z = -1;
-            if (keys['KeyS']) direction.z = 1;
-            if (keys['KeyA']) direction.x = -1;
-            if (keys['KeyD']) direction.x = 1;
-
+            
+            if (moveForward) direction.z -= 1;
+            if (moveBackward) direction.z += 1;
+            if (moveLeft) direction.x -= 1;
+            if (moveRight) direction.x += 1;
+            
             direction.normalize();
-
+            
             const currentVelocity = keys['ShiftLeft'] ? sprintVelocity : velocity;
             const moveVector = new THREE.Vector3();
             moveVector.copy(direction);
             moveVector.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
-
+            
             player.position.x += moveVector.x * currentVelocity;
             player.position.z += moveVector.z * currentVelocity;
         }
@@ -842,6 +945,7 @@
                     jumpVelocity = 0.25;
                     isFalling = false;
                     currentGravity = jumpGravity;
+                    canJump = true;
                 }
             } else {
                 raycaster.set(player.position, downVector);
@@ -852,6 +956,7 @@
                         isFalling = false;
                         player.position.y = groundLevel;
                         currentGravity = jumpGravity;
+                        canJump = true;
                     }
                 } else {
                     isFalling = true;
@@ -871,8 +976,27 @@
             if (!gameRunning) return;
 
             requestAnimationFrame(animate);
+            
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+            
+            // Apply gravity
+            player.velocity.y -= 9.8 * delta;
+            
+            // Movement
             updatePlayerPosition();
+            
+            // Update player position
+            player.position.y += player.velocity.y * delta;
+            
+            // Jump and fall physics
             updatePlayerJumpAndFall();
+            
+            // Update camera position
+            camera.position.copy(player.position);
+            
+            prevTime = time;
+            
             renderer.render(scene, camera);
         }
 
